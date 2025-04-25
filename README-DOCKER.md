@@ -14,7 +14,7 @@ A lightweight, optimized Docker container for ComfyUI with a focus on resource e
 
 ```bash
 # Pull the image
-docker pull yourusername/comfyui:latest
+docker pull theclouditect/comfyui:latest
 
 # Run with basic configuration
 docker run -p 8188:8188 \
