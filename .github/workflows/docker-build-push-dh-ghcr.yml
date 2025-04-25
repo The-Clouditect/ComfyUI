@@ -29,7 +29,7 @@ jobs:
       run: |
         # Save our workflow file
         mkdir -p /tmp/saved
-        cp -r .github/workflows/sync-build-docker.yml /tmp/saved/ || true
+        cp -r .github/workflows/docker-build-push-dh-ghcr.yml /tmp/saved/ || true
         
         # Backup our Docker files
         cp Dockerfile /tmp/saved/ || true
@@ -44,7 +44,7 @@ jobs:
         mkdir -p .github/workflows/
         
         # Restore our workflow file
-        cp /tmp/saved/sync-build-docker.yml .github/workflows/ || true
+        cp /tmp/saved/docker-build-push-dh-ghcr.yml .github/workflows/ || true
         
         # Restore our Docker files
         cp /tmp/saved/Dockerfile . || true
