@@ -1,0 +1,97 @@
+name: Sync and Build ComfyUI Docker Image
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Daily at midnight
+  workflow_dispatch:     # Manual trigger
+
+jobs:
+  sync-and-build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    
+    - name: Configure Git
+      run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+    
+    - name: Fetch upstream changes
+      run: |
+        git remote add upstream https://github.com/comfyanonymous/ComfyUI.git
+        git fetch upstream
+    
+    - name: Create sanitized merge
+      run: |
+        # Save our workflow file
+        mkdir -p /tmp/saved
+        cp -r .github/workflows/sync-build-docker.yml /tmp/saved/ || true
+        
+        # Backup our Docker files
+        cp Dockerfile /tmp/saved/ || true
+        cp docker-compose.sample.yml /tmp/saved/ || true
+        cp README-DOCKER.md /tmp/saved/ || true
+        
+        # Pull all upstream changes
+        git merge upstream/master --no-commit --no-ff
+        
+        # Remove ALL workflow files
+        git rm -rf .github/workflows/ || true
+        mkdir -p .github/workflows/
+        
+        # Restore our workflow file
+        cp /tmp/saved/sync-build-docker.yml .github/workflows/ || true
+        
+        # Restore our Docker files
+        cp /tmp/saved/Dockerfile . || true
+        cp /tmp/saved/docker-compose.sample.yml . || true
+        cp /tmp/saved/README-DOCKER.md . || true
+        
+        # Commit the sanitized merge
+        git add .
+        git commit -m "Merge upstream changes with workflow sanitization"
+        
+        # Push changes
+        git push origin main
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ghcr.io
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    
+    - name: Extract metadata for Docker
+      id: meta
+      uses: docker/metadata-action@v4
+      with:
+        images: |
+          ghcr.io/${{ github.repository_owner }}/comfyui
+          ${{ secrets.DOCKERHUB_USERNAME }}/comfyui
+        tags: |
+          type=raw,value=latest
+          type=raw,value={{date 'YYYYMMDD'}}
+    
+    - name: Build and push
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64
