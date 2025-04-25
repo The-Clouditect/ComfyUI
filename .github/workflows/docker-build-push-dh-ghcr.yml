@@ -37,7 +37,7 @@ jobs:
         cp README-DOCKER.md /tmp/saved/ || true
         
         # Pull all upstream changes
-        git merge upstream/master --no-commit --no-ff
+        git merge upstream/master --no-commit --no-ff || true
         
         # Remove ALL workflow files
         git rm -rf .github/workflows/ || true
