@@ -30,20 +30,44 @@ jobs:
     - name: Check for upstream changes
       id: check_changes
       run: |
-        UPSTREAM_CHANGES=$(git rev-list --count HEAD..upstream/master)
-        echo "Found $UPSTREAM_CHANGES new commits in upstream"
+        # Debug information
+        echo "Current branch details:"
+        git branch -v
+        echo "Remote details:"
+        git remote -v
         
-        if [ "$UPSTREAM_CHANGES" -eq "0" ]; then
-          echo "No new commits in upstream, skipping build and push"
-          echo "skip_build=true" >> "$GITHUB_OUTPUT"
+        # Get latest upstream commit
+        UPSTREAM_LATEST=$(git rev-parse upstream/master)
+        echo "Latest upstream commit: $UPSTREAM_LATEST"
+        
+        # Find the merge-base (common ancestor) between our branch and upstream
+        MERGE_BASE=$(git merge-base HEAD upstream/master)
+        echo "Merge base: $MERGE_BASE"
+        
+        # Check if we're already up-to-date with upstream
+        if [ "$UPSTREAM_LATEST" = "$MERGE_BASE" ]; then
+          echo "We are already up-to-date with upstream or ahead of it"
+          echo "skip_build=true" >> $GITHUB_OUTPUT
+          echo "SKIP_BUILD=true" >> $GITHUB_ENV
         else
-          echo "Found $UPSTREAM_CHANGES new commits in upstream, will proceed with merge"
-          echo "skip_build=false" >> "$GITHUB_OUTPUT"
+          echo "New changes from upstream detected"
+          echo "skip_build=false" >> $GITHUB_OUTPUT
+          echo "SKIP_BUILD=false" >> $GITHUB_ENV
         fi
+        
+        # Extra debugging
+        echo "GITHUB_OUTPUT file content:"
+        cat $GITHUB_OUTPUT
+
+    - name: Debug check_changes output
+      run: |
+        echo "check_changes.outputs.skip_build: ${{ steps.check_changes.outputs.skip_build }}"
+        echo "SKIP_BUILD env var: ${{ env.SKIP_BUILD }}"
 
     - name: Process upstream changes
-      if: steps.check_changes.outputs.skip_build != 'true'
+      if: env.SKIP_BUILD != 'true'
       run: |
+        echo "Processing upstream changes because SKIP_BUILD is not 'true'"
         # Save our workflow file
         mkdir -p /tmp/saved
         cp -r .github/workflows/docker-build-push-dh-ghcr.yml /tmp/saved/ || true
@@ -74,11 +98,11 @@ jobs:
         git push origin main || true
     
     - name: Set up Docker Buildx
-      if: steps.check_changes.outputs.skip_build != 'true'
+      if: env.SKIP_BUILD != 'true'
       uses: docker/setup-buildx-action@v2
     
     - name: Login to GitHub Container Registry
-      if: steps.check_changes.outputs.skip_build != 'true'
+      if: env.SKIP_BUILD != 'true'
       uses: docker/login-action@v2
       with:
         registry: ghcr.io
@@ -86,14 +110,14 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     
     - name: Login to Docker Hub
-      if: steps.check_changes.outputs.skip_build != 'true'
+      if: env.SKIP_BUILD != 'true'
       uses: docker/login-action@v2
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
     
     - name: Extract metadata for Docker
-      if: steps.check_changes.outputs.skip_build != 'true'
+      if: env.SKIP_BUILD != 'true'
       id: meta
       uses: docker/metadata-action@v4
       with:
@@ -105,7 +129,7 @@ jobs:
           type=raw,value={{date 'YYYYMMDD'}}
     
     - name: Build and push
-      if: steps.check_changes.outputs.skip_build != 'true'
+      if: env.SKIP_BUILD != 'true'
       uses: docker/build-push-action@v4
       with:
         context: .
