@@ -4,7 +4,7 @@ on:
   schedule:
     - cron: '0 0 * * *'  # Daily at midnight
   push:
-    branches: [ main ]
+    branches: [ main ]  # Using main branch
   workflow_dispatch:     # Manual trigger
 
 jobs:
@@ -27,47 +27,32 @@ jobs:
         git remote add upstream https://github.com/comfyanonymous/ComfyUI.git
         git fetch upstream
     
-    - name: Check for upstream changes
-      id: check_changes
+    - name: Compare upstream with local
+      id: check_upstream
       run: |
-        # Debug information
-        echo "Current branch details:"
-        git branch -v
-        echo "Remote details:"
-        git remote -v
-        
-        # Get latest upstream commit
+        # Store latest commit hashes
         UPSTREAM_LATEST=$(git rev-parse upstream/master)
+        LAST_BUILD_DATE=$(git log -1 --format=%cd --date=iso)
+        
+        echo "Current branch: $(git branch --show-current)"
         echo "Latest upstream commit: $UPSTREAM_LATEST"
+        echo "Latest local commit date: $LAST_BUILD_DATE"
         
-        # Find the merge-base (common ancestor) between our branch and upstream
-        MERGE_BASE=$(git merge-base HEAD upstream/master)
-        echo "Merge base: $MERGE_BASE"
+        # Compare based on file content that matters for the build
+        git diff --quiet upstream/master -- . ':!.github' || CHANGES_DETECTED=$?
         
-        # Check if we're already up-to-date with upstream
-        if [ "$UPSTREAM_LATEST" = "$MERGE_BASE" ]; then
-          echo "We are already up-to-date with upstream or ahead of it"
-          echo "skip_build=true" >> $GITHUB_OUTPUT
-          echo "SKIP_BUILD=true" >> $GITHUB_ENV
-        else
-          echo "New changes from upstream detected"
-          echo "skip_build=false" >> $GITHUB_OUTPUT
+        if [ "${CHANGES_DETECTED:-0}" -eq "1" ]; then
+          echo "Detected changes in files that affect the build"
           echo "SKIP_BUILD=false" >> $GITHUB_ENV
+        else
+          echo "No relevant changes detected in upstream"
+          echo "SKIP_BUILD=true" >> $GITHUB_ENV
         fi
-        
-        # Extra debugging
-        echo "GITHUB_OUTPUT file content:"
-        cat $GITHUB_OUTPUT
-
-    - name: Debug check_changes output
-      run: |
-        echo "check_changes.outputs.skip_build: ${{ steps.check_changes.outputs.skip_build }}"
-        echo "SKIP_BUILD env var: ${{ env.SKIP_BUILD }}"
-
+    
     - name: Process upstream changes
       if: env.SKIP_BUILD != 'true'
       run: |
-        echo "Processing upstream changes because SKIP_BUILD is not 'true'"
+        echo "Processing upstream changes..."
         # Save our workflow file
         mkdir -p /tmp/saved
         cp -r .github/workflows/docker-build-push-dh-ghcr.yml /tmp/saved/ || true
@@ -95,7 +80,7 @@ jobs:
         # Commit and push changes
         git add .
         git commit -m "Merge upstream changes with workflow sanitization"
-        git push origin main || true
+        git push origin main
     
     - name: Set up Docker Buildx
       if: env.SKIP_BUILD != 'true'
