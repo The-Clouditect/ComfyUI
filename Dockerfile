@@ -1,25 +1,42 @@
-FROM python:3.10-slim
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 
-# Set working directory
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV REQS_FILE=requirements.txt
+
 WORKDIR /app
 
-# Add necessary system dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
-    build-essential \
+    python3.10 \
+    python3.10-dev \
+    python3-pip \
     git \
     wget \
-    curl \
+    build-essential \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
+
+# Make Python 3.10 the default
+RUN ln -sf /usr/bin/python3.10 /usr/bin/python3 && \
+    ln -sf /usr/bin/python3 /usr/bin/python && \
+    ln -sf /usr/bin/pip3 /usr/bin/pip
 
 # Clone ComfyUI repository
 RUN git clone https://github.com/comfyanonymous/ComfyUI.git /app
 
-# Install Python dependencies with specific versions to avoid conflicts
-RUN pip install --no-cache-dir \
-    torch==1.12.1+cu116 torchvision==0.13.1+cu116 --extra-index-url https://download.pytorch.org/whl/cu116 \
-    && pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir xformers==0.0.16
+# Install PyTorch 2.2 with CUDA 11.8 support (using compatible release specifier)
+RUN pip install --no-cache-dir "torch~=2.2.0+cu118" "torchvision~=0.17.0+cu118" --extra-index-url https://download.pytorch.org/whl/cu118
+
+# Use compatible NumPy (< 2.0)
+RUN pip install --no-cache-dir "numpy~=1.24.0"
+
+# Install xformers compatible with PyTorch 2.2 (using compatible release specifier)
+RUN pip install --no-cache-dir "xformers~=0.0.23"
+
+# Install other requirements
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Create necessary directories
 RUN mkdir -p /app/models/checkpoints \
@@ -38,10 +55,5 @@ VOLUME ["/app/models", "/app/output", "/app/temp", "/app/custom_nodes"]
 # Expose port
 EXPOSE 8188
 
-# Environment variables
-ENV PYTHONUNBUFFERED=1
-ENV NVIDIA_VISIBLE_DEVICES=all
-ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
-
-# Run ComfyUI with proper arguments
+# Run ComfyUI
 CMD ["python", "main.py", "--listen", "0.0.0.0", "--port", "8188"]
