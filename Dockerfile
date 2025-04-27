@@ -33,12 +33,21 @@ RUN pip install --upgrade pip
 # Install ComfyUI requirements first
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Now install our specific versions with force-reinstall to override
+# Install torch, torchvision and torchaudio with CUDA 11.8 support
 RUN pip install --no-cache-dir --force-reinstall torch==2.2.0 torchvision==0.17.0 torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+# Install specific safetensors version known to handle large models better
 RUN pip install --no-cache-dir --force-reinstall safetensors==0.4.1
+
+# Install compatible NumPy
 RUN pip install --no-cache-dir --force-reinstall "numpy~=1.24.0"
-RUN pip install --no-cache-dir --force-reinstall xformers==0.0.23
-RUN pip install --no-cache-dir --force-reinstall triton==2.0.0
+
+# Install xformers with appropriate CUDA compatibility
+# Using the recommended approach directly from the xformers repository
+RUN pip install --no-cache-dir --force-reinstall -U xformers --index-url https://download.pytorch.org/whl/cu118
+
+# Install triton without specific version to ensure compatibility
+RUN pip install --no-cache-dir --force-reinstall triton
 
 # Create necessary directories
 RUN mkdir -p /app/models/checkpoints \
