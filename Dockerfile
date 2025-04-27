@@ -1,14 +1,14 @@
-FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+# Use a CUDA 12.1 base image compatible with host driver 570.x
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
-ENV REQS_FILE=requirements.txt
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Install system dependencies and clean up apt cache in the same layer
+RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.10 \
     python3.10-dev \
     python3-pip \
@@ -25,33 +25,36 @@ RUN ln -sf /usr/bin/python3.10 /usr/bin/python3 && \
     ln -sf /usr/bin/pip3 /usr/bin/pip
 
 # Clone ComfyUI repository
+# Ensure you have network access during build for this
 RUN git clone https://github.com/comfyanonymous/ComfyUI.git /app
 
-# Upgrade pip first for better dependency resolution
-RUN pip install --upgrade pip
+# Upgrade pip first
+RUN pip install --no-cache-dir --upgrade pip
 
-# Install pytorch first (before ComfyUI requirements)
-RUN pip install --no-cache-dir torch==2.0.1 torchvision==0.15.2 torchaudio --index-url https://download.pytorch.org/whl/cu118 && \
-    rm -rf /root/.cache/pip
+# Install PyTorch >= 2.4 compatible with CUDA 12.1
+# Check pytorch.org for the latest 2.4.x patch version if desired
+# Note the 'cu121' tag in the index URL
+RUN pip install --no-cache-dir \
+    torch==2.4.0 \
+    torchvision==0.19.0 \
+    torchaudio==2.4.0 \
+    --index-url https://download.pytorch.org/whl/cu121
 
-# Install xformers - use compatible older version 
-RUN pip install --no-cache-dir xformers==0.0.20 && \
-    rm -rf /root/.cache/pip
+# Install xformers - Let pip choose a compatible version for PyTorch 2.4.0 / CUDA 12.1
+RUN pip install --no-cache-dir xformers
 
-# Install numpy with compatibility for older versions
-RUN pip install --no-cache-dir "numpy<2.0.0" && \
-    rm -rf /root/.cache/pip
+# Install numpy with compatibility constraint before installing requirements
+# This helps avoid potential issues with packages not yet fully compatible with numpy 2.x
+RUN pip install --no-cache-dir "numpy<2.0.0"
 
-# Install safetensors
-RUN pip install --no-cache-dir safetensors==0.4.1 && \
-    rm -rf /root/.cache/pip
+# Now install ComfyUI requirements from the cloned repo
+# This will install dependencies like safetensors>=0.4.2
+# Ensure requirements.txt exists at /app/requirements.txt via the git clone above
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Now install ComfyUI requirements (some will be skipped if already installed)
-RUN pip install --no-cache-dir -r requirements.txt && \
-    rm -rf /root/.cache/pip
-
-# Create necessary directories
-RUN mkdir -p /app/models/checkpoints \
+# Create necessary directories for models, outputs, etc.
+RUN mkdir -p \
+    /app/models/checkpoints \
     /app/models/loras \
     /app/models/controlnet \
     /app/models/upscale_models \
@@ -61,11 +64,12 @@ RUN mkdir -p /app/models/checkpoints \
     /app/temp \
     /app/custom_nodes
 
-# Set up volume mount points
+# Set up volume mount points for persistent storage and custom content
 VOLUME ["/app/models", "/app/output", "/app/temp", "/app/custom_nodes"]
 
-# Expose port
+# Expose the default ComfyUI port
 EXPOSE 8188
 
-# Run ComfyUI with increased memory limits
-CMD ["python", "main.py", "--listen", "0.0.0.0", "--port", "8188", "--disable-cuda-malloc-limit"]
+# Default command to run ComfyUI
+# --disable-cuda-malloc might be needed for some setups, keep if it was working
+CMD ["python", "main.py", "--listen", "0.0.0.0", "--port", "8188", "--disable-cuda-malloc"]
