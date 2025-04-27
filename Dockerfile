@@ -30,24 +30,15 @@ RUN git clone https://github.com/comfyanonymous/ComfyUI.git /app
 # Upgrade pip first for better dependency resolution
 RUN pip install --upgrade pip
 
-# Install PyTorch 2.2 with CUDA 11.8 support - fixed format
-RUN pip install --no-cache-dir torch==2.2.0 torchvision==0.17.0 torchaudio --index-url https://download.pytorch.org/whl/cu118
-
-# Install specific safetensors version known to handle large models better
-# Do this BEFORE requirements.txt to ensure the version is respected
-RUN pip install --no-cache-dir safetensors==0.4.1
-
-# Use compatible NumPy (< 2.0)
-RUN pip install --no-cache-dir "numpy~=1.24.0"
-
-# Install xformers compatible with PyTorch 2.2
-RUN pip install --no-cache-dir xformers==0.0.23
-
-# Install torchaudio and triton (required for audio nodes)
-RUN pip install --no-cache-dir triton==2.0.0
-
-# Install other requirements
+# Install ComfyUI requirements first
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Now install our specific versions with force-reinstall to override
+RUN pip install --no-cache-dir --force-reinstall torch==2.2.0 torchvision==0.17.0 torchaudio --index-url https://download.pytorch.org/whl/cu118
+RUN pip install --no-cache-dir --force-reinstall safetensors==0.4.1
+RUN pip install --no-cache-dir --force-reinstall "numpy~=1.24.0"
+RUN pip install --no-cache-dir --force-reinstall xformers==0.0.23
+RUN pip install --no-cache-dir --force-reinstall triton==2.0.0
 
 # Create necessary directories
 RUN mkdir -p /app/models/checkpoints \
