@@ -30,33 +30,28 @@ RUN git clone https://github.com/comfyanonymous/ComfyUI.git /app
 # Upgrade pip first
 RUN pip install --no-cache-dir --upgrade pip
 
-# Install PyTorch >= 2.4 compatible with CUDA 12.1
-# Check pytorch.org for the latest 2.4.x patch version if desired
-# Note the 'cu121' tag in the index URL
+# Install numpy constraint FIRST to potentially reduce later churn
+RUN pip install --no-cache-dir "numpy<2.0.0"
+
+# Install PyTorch == 2.4.0 compatible with CUDA 12.1
 RUN pip install --no-cache-dir \
     torch==2.4.0 \
     torchvision==0.19.0 \
     torchaudio==2.4.0 \
     --index-url https://download.pytorch.org/whl/cu121
 
-# Install a SPECIFIC xformers version compatible with torch 2.4.0 / cu121
-# Pinning to 0.0.25.post1 to prevent pip from upgrading torch
-# Include index-url in case the wheel is hosted there
-RUN pip install --no-cache-dir xformers==0.0.25.post1 --index-url https://download.pytorch.org/whl/cu121
-
-# Install numpy with compatibility constraint before installing requirements
-# This helps avoid potential issues with packages not yet fully compatible with numpy 2.x
-RUN pip install --no-cache-dir "numpy<2.0.0"
+# Install the CORRECT xformers version compatible with torch 2.4.0 / cu121
+# Pinning to 0.0.27.post1 based on its dependency requirements
+RUN pip install --no-cache-dir xformers==0.0.27.post1 --index-url https://download.pytorch.org/whl/cu121
 
 # Comment out specific, unpinned torch entries in requirements.txt before installing
-# This prevents pip resolver warnings/conflicts for these manually installed packages.
-# Matches only lines containing exactly 'torch', 'torchvision', or 'torchaudio'.
 RUN sed -i -e '/^torch$/s/^/#/' \
          -e '/^torchvision$/s/^/#/' \
          -e '/^torchaudio$/s/^/#/' \
          requirements.txt
 
 # Now install ComfyUI requirements from the modified file
+# This should install the rest without trying to change torch/xformers/numpy
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Create necessary directories for models, outputs, etc.
@@ -78,5 +73,4 @@ VOLUME ["/app/models", "/app/output", "/app/temp", "/app/custom_nodes"]
 EXPOSE 8188
 
 # Default command to run ComfyUI
-# --disable-cuda-malloc might be needed for some setups, keep if it was working
 CMD ["python", "main.py", "--listen", "0.0.0.0", "--port", "8188", "--disable-cuda-malloc"]
