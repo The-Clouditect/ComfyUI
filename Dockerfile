@@ -25,7 +25,6 @@ RUN ln -sf /usr/bin/python3.10 /usr/bin/python3 && \
     ln -sf /usr/bin/pip3 /usr/bin/pip
 
 # Clone ComfyUI repository
-# Ensure you have network access during build for this
 RUN git clone https://github.com/comfyanonymous/ComfyUI.git /app
 
 # Upgrade pip first
@@ -40,16 +39,24 @@ RUN pip install --no-cache-dir \
     torchaudio==2.4.0 \
     --index-url https://download.pytorch.org/whl/cu121
 
-# Install xformers - Let pip choose a compatible version for PyTorch 2.4.0 / CUDA 12.1
-RUN pip install --no-cache-dir xformers
+# Install a SPECIFIC xformers version compatible with torch 2.4.0 / cu121
+# Pinning to 0.0.25.post1 to prevent pip from upgrading torch
+# Include index-url in case the wheel is hosted there
+RUN pip install --no-cache-dir xformers==0.0.25.post1 --index-url https://download.pytorch.org/whl/cu121
 
 # Install numpy with compatibility constraint before installing requirements
 # This helps avoid potential issues with packages not yet fully compatible with numpy 2.x
 RUN pip install --no-cache-dir "numpy<2.0.0"
 
-# Now install ComfyUI requirements from the cloned repo
-# This will install dependencies like safetensors>=0.4.2
-# Ensure requirements.txt exists at /app/requirements.txt via the git clone above
+# Comment out specific, unpinned torch entries in requirements.txt before installing
+# This prevents pip resolver warnings/conflicts for these manually installed packages.
+# Matches only lines containing exactly 'torch', 'torchvision', or 'torchaudio'.
+RUN sed -i -e '/^torch$/s/^/#/' \
+         -e '/^torchvision$/s/^/#/' \
+         -e '/^torchaudio$/s/^/#/' \
+         requirements.txt
+
+# Now install ComfyUI requirements from the modified file
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Create necessary directories for models, outputs, etc.
