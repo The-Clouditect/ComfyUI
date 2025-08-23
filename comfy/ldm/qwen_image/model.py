@@ -214,9 +214,9 @@ class QwenImageTransformerBlock(nn.Module):
             operations=operations,
         )
 
-    def _modulate(self, x, mod_params):
-        shift, scale, gate = mod_params.chunk(3, dim=-1)
-        return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1), gate.unsqueeze(1)
+    def _modulate(self, x: torch.Tensor, mod_params: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        shift, scale, gate = torch.chunk(mod_params, 3, dim=-1)
+        return torch.addcmul(shift.unsqueeze(1), x, 1 + scale.unsqueeze(1)), gate.unsqueeze(1)
 
     def forward(
         self,
@@ -248,11 +248,11 @@ class QwenImageTransformerBlock(nn.Module):
 
         img_normed2 = self.img_norm2(hidden_states)
         img_modulated2, img_gate2 = self._modulate(img_normed2, img_mod2)
-        hidden_states = hidden_states + img_gate2 * self.img_mlp(img_modulated2)
+        hidden_states = torch.addcmul(hidden_states, img_gate2, self.img_mlp(img_modulated2))
 
         txt_normed2 = self.txt_norm2(encoder_hidden_states)
         txt_modulated2, txt_gate2 = self._modulate(txt_normed2, txt_mod2)
-        encoder_hidden_states = encoder_hidden_states + txt_gate2 * self.txt_mlp(txt_modulated2)
+        encoder_hidden_states = torch.addcmul(encoder_hidden_states, txt_gate2, self.txt_mlp(txt_modulated2))
 
         return encoder_hidden_states, hidden_states
 
@@ -275,7 +275,7 @@ class LastLayer(nn.Module):
     def forward(self, x: torch.Tensor, conditioning_embedding: torch.Tensor) -> torch.Tensor:
         emb = self.linear(self.silu(conditioning_embedding))
         scale, shift = torch.chunk(emb, 2, dim=1)
-        x = self.norm(x) * (1 + scale)[:, None, :] + shift[:, None, :]
+        x = torch.addcmul(shift[:, None, :], self.norm(x), (1 + scale)[:, None, :])
         return x
 
 
@@ -293,6 +293,7 @@ class QwenImageTransformer2DModel(nn.Module):
         guidance_embeds: bool = False,
         axes_dims_rope: Tuple[int, int, int] = (16, 56, 56),
         image_model=None,
+        final_layer=True,
         dtype=None,
         device=None,
         operations=None,
@@ -300,6 +301,7 @@ class QwenImageTransformer2DModel(nn.Module):
         super().__init__()
         self.dtype = dtype
         self.patch_size = patch_size
+        self.in_channels = in_channels
         self.out_channels = out_channels or in_channels
         self.inner_dim = num_attention_heads * attention_head_dim
 
@@ -329,9 +331,9 @@ class QwenImageTransformer2DModel(nn.Module):
             for _ in range(num_layers)
         ])
 
-        self.norm_out = LastLayer(self.inner_dim, self.inner_dim, dtype=dtype, device=device, operations=operations)
-        self.proj_out = operations.Linear(self.inner_dim, patch_size * patch_size * self.out_channels, bias=True, dtype=dtype, device=device)
-        self.gradient_checkpointing = False
+        if final_layer:
+            self.norm_out = LastLayer(self.inner_dim, self.inner_dim, dtype=dtype, device=device, operations=operations)
+            self.proj_out = operations.Linear(self.inner_dim, patch_size * patch_size * self.out_channels, bias=True, dtype=dtype, device=device)
 
     def process_img(self, x, index=0, h_offset=0, w_offset=0):
         bs, c, t, h, w = x.shape
@@ -362,6 +364,7 @@ class QwenImageTransformer2DModel(nn.Module):
         guidance: torch.Tensor = None,
         ref_latents=None,
         transformer_options={},
+        control=None,
         **kwargs
     ):
         timestep = timesteps
@@ -442,6 +445,13 @@ class QwenImageTransformer2DModel(nn.Module):
                     out = p({"img": hidden_states, "txt": encoder_hidden_states, "x": x, "block_index": i})
                     hidden_states = out["img"]
                     encoder_hidden_states = out["txt"]
+
+            if control is not None: # Controlnet
+                control_i = control.get("input")
+                if i < len(control_i):
+                    add = control_i[i]
+                    if add is not None:
+                        hidden_states += add
 
         hidden_states = self.norm_out(hidden_states, temb)
         hidden_states = self.proj_out(hidden_states)
