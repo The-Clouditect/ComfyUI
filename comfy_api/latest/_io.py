@@ -75,6 +75,12 @@ class NumberDisplay(str, Enum):
     slider = "slider"
 
 
+class ControlAfterGenerate(str, Enum):
+    fixed = "fixed"
+    increment = "increment"
+    decrement = "decrement"
+    randomize = "randomize"
+
 class _ComfyType(ABC):
     Type = Any
     io_type: str = None
@@ -263,7 +269,7 @@ class Int(ComfyTypeIO):
     class Input(WidgetInput):
         '''Integer input.'''
         def __init__(self, id: str, display_name: str=None, optional=False, tooltip: str=None, lazy: bool=None,
-                    default: int=None, min: int=None, max: int=None, step: int=None, control_after_generate: bool=None,
+                    default: int=None, min: int=None, max: int=None, step: int=None, control_after_generate: bool | ControlAfterGenerate=None,
                     display_mode: NumberDisplay=None, socketless: bool=None, force_input: bool=None, extra_dict=None, raw_link: bool=None, advanced: bool=None):
             super().__init__(id, display_name, optional, tooltip, lazy, default, socketless, None, force_input, extra_dict, raw_link, advanced)
             self.min = min
@@ -345,7 +351,7 @@ class Combo(ComfyTypeIO):
             tooltip: str=None,
             lazy: bool=None,
             default: str | int | Enum = None,
-            control_after_generate: bool=None,
+            control_after_generate: bool | ControlAfterGenerate=None,
             upload: UploadType=None,
             image_folder: FolderType=None,
             remote: RemoteOptions=None,
@@ -389,7 +395,7 @@ class MultiCombo(ComfyTypeI):
     Type = list[str]
     class Input(Combo.Input):
         def __init__(self, id: str, options: list[str], display_name: str=None, optional=False, tooltip: str=None, lazy: bool=None,
-                    default: list[str]=None, placeholder: str=None, chip: bool=None, control_after_generate: bool=None,
+                    default: list[str]=None, placeholder: str=None, chip: bool=None, control_after_generate: bool | ControlAfterGenerate=None,
                     socketless: bool=None, extra_dict=None, raw_link: bool=None, advanced: bool=None):
             super().__init__(id, options, display_name, optional, tooltip, lazy, default, control_after_generate, socketless=socketless, extra_dict=extra_dict, raw_link=raw_link, advanced=advanced)
             self.multiselect = True
@@ -1202,6 +1208,30 @@ class Color(ComfyTypeIO):
 
       def as_dict(self):
           return super().as_dict()
+
+@comfytype(io_type="BOUNDING_BOX")
+class BoundingBox(ComfyTypeIO):
+    class BoundingBoxDict(TypedDict):
+        x: int
+        y: int
+        width: int
+        height: int
+    Type = BoundingBoxDict
+
+    class Input(WidgetInput):
+        def __init__(self, id: str, display_name: str=None, optional=False, tooltip: str=None,
+                     socketless: bool=True, default: dict=None, component: str=None):
+            super().__init__(id, display_name, optional, tooltip, None, default, socketless)
+            self.component = component
+            if default is None:
+                self.default = {"x": 0, "y": 0, "width": 512, "height": 512}
+
+        def as_dict(self):
+            d = super().as_dict()
+            if self.component:
+                d["component"] = self.component
+            return d
+
 
 DYNAMIC_INPUT_LOOKUP: dict[str, Callable[[dict[str, Any], dict[str, Any], tuple[str, dict[str, Any]], str, list[str] | None], None]] = {}
 def register_dynamic_input_func(io_type: str, func: Callable[[dict[str, Any], dict[str, Any], tuple[str, dict[str, Any]], str, list[str] | None], None]):
@@ -2097,6 +2127,7 @@ __all__ = [
     "UploadType",
     "RemoteOptions",
     "NumberDisplay",
+    "ControlAfterGenerate",
 
     "comfytype",
     "Custom",
@@ -2183,5 +2214,6 @@ __all__ = [
     "ImageCompare",
     "PriceBadgeDepends",
     "PriceBadge",
+    "BoundingBox",
     "NodeReplace",
 ]
