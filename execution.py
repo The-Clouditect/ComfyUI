@@ -724,6 +724,9 @@ class PromptExecutor:
         self.add_message("execution_start", { "prompt_id": prompt_id}, broadcast=False)
 
         self._notify_prompt_lifecycle("start", prompt_id)
+        ram_headroom = int(self.cache_args["ram"] * (1024 ** 3))
+        ram_release_callback = self.caches.outputs.ram_release if self.cache_type == CacheType.RAM_PRESSURE else None
+        comfy.memory_management.set_ram_cache_release_state(ram_release_callback, ram_headroom)
 
         try:
             with torch.inference_mode():
@@ -773,7 +776,10 @@ class PromptExecutor:
                         execution_list.unstage_node_execution()
                     else: # result == ExecutionResult.SUCCESS:
                         execution_list.complete_node_execution()
-                    self.caches.outputs.poll(ram_headroom=self.cache_args["ram"])
+
+                    if self.cache_type == CacheType.RAM_PRESSURE:
+                        comfy.model_management.free_memory(0, None, pins_required=ram_headroom, ram_required=ram_headroom)
+                        comfy.memory_management.extra_ram_release(ram_headroom)
                 else:
                     # Only execute when the while-loop ends without break
                     # Send cached UI for intermediate output nodes that weren't executed
@@ -801,6 +807,7 @@ class PromptExecutor:
                 if comfy.model_management.DISABLE_SMART_MEMORY:
                     comfy.model_management.unload_all_models()
         finally:
+            comfy.memory_management.set_ram_cache_release_state(None, 0)
             self._notify_prompt_lifecycle("end", prompt_id)
 
 
